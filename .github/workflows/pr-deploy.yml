@@ -63,5 +63,5 @@ jobs:
         branch: gh-pages
         folder: publish/wwwroot
         repository-name: ${{ github.repository_owner }}/angor-debug  # This will be <github-username>/angor-debug
-        token: ${{ secrets.GITHUB_TOKEN }}  # Try default token first
+        token: ${{ secrets.ANGOR_DEBUG_DEPLOY_TOKEN }}
         commit-message: "Deploy PR #${{ env.PR_NUMBER }} for testing"
