@@ -156,11 +156,18 @@ jobs:
     - name: Add .nojekyll file
       run: touch dist/wwwroot/.nojekyll
 
-    # CHANGED: Deploy to angor-test instead of original repo
-    - name: Deploy to Github Pages
-      uses: JamesIves/github-pages-deploy-action@v4
+    # TEMPORARILY DISABLED: Deploy to angor-test (fix permissions first)
+    # - name: Deploy to Github Pages
+    #   uses: JamesIves/github-pages-deploy-action@v4
+    #   with:
+    #       branch: gh-pages
+    #       folder: dist/wwwroot
+    #       repository-name: ${{ github.repository_owner }}/angor-test
+    #       token: ${{ secrets.ANGOR_DEBUG_DEPLOY_TOKEN }}
+    
+    # FOR NOW: Just upload as artifact for manual testing
+    - name: Upload Web Build
+      uses: actions/upload-artifact@v4
       with:
-          branch: gh-pages  # CHANGED: from main to gh-pages (standard for GitHub Pages)
-          folder: dist/wwwroot
-          repository-name: ${{ github.repository_owner }}/angor-test  # CHANGED: deploy to your angor-test repo
-          token: ${{ secrets.GITHUB_TOKEN }}  # Try default token first
+        name: angor-web-build
+        path: dist/wwwroot
