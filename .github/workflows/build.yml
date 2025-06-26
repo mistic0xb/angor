@@ -13,26 +13,21 @@ jobs:
     strategy:
         matrix:
           include:
-            - name: Windows x64
-              os: windows-latest
-              extension: ".zip"
-              runtime: "win-x64"
-            # - name: Windows ARM64
+            # COMMENTED OUT: Windows and Mac builds for faster testing
+            # - name: Windows x64
             #   os: windows-latest
             #   extension: ".zip"
-            #   runtime: "win-arm64"
-            - name: Linux x64
-              os: ubuntu-latest
-              extension: ".tar.gz"
-              runtime: "linux-x64"
+            #   runtime: "win-x64"
             # - name: macOS x64
             #   os: macos-13
             #   runtime: "osx-x64"
             #   extension: ".zip"
-            - name: macOS ARM64
-              os: macos-latest
-              runtime: "osx-arm64"
-              extension: ".zip"
+            
+            # Only build Linux for now (faster)
+            - name: Linux x64
+              os: ubuntu-latest
+              extension: ".tar.gz"
+              runtime: "linux-x64"
         fail-fast: false
   
     runs-on: ${{ matrix.os }}
@@ -65,13 +60,7 @@ jobs:
     - name: Zip Release
       run: |
         cd publish
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          7z a -tzip "../angor-web-${{ env.VERSION }}-${{ matrix.runtime }}.zip" .
-        elif [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-          zip -r "../angor-web-${{ env.VERSION }}-${{ matrix.runtime }}.zip" .
-        else
-          zip -r "../angor-web-${{ env.VERSION }}-${{ matrix.runtime }}.zip" .
-        fi
+        zip -r "../angor-web-${{ env.VERSION }}-${{ matrix.runtime }}.zip" .
       shell: bash
 
     - name: Upload Build Artifact
@@ -80,75 +69,25 @@ jobs:
         name: angor-web-${{ env.VERSION }}-${{ matrix.runtime }}.zip
         path: angor-web-${{ env.VERSION }}-${{ matrix.runtime }}.zip
 
-    - name: Install Rust (Stable)
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: stable
-          override: true
+    # COMMENTED OUT: Desktop app building (Tauri/Rust) - speeds up testing
+    # - name: Install Rust (Stable)
+    #   uses: actions-rs/toolchain@v1
+    #   with:
+    #       toolchain: stable
+    #       override: true
 
-    - name: Install Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-            sudo apt-get update
-            sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev webkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+    # - name: Install Linux dependencies
+    #   if: matrix.os == 'ubuntu-latest'
+    #   run: |
+    #         sudo apt-get update
+    #         sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev webkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
-    - name: Install and build
-      run: |
-        npm install
-        npm run tauri:build:${{ matrix.runtime }}
+    # - name: Install and build
+    #   run: |
+    #     npm install
+    #     npm run tauri:build:${{ matrix.runtime }}
 
-    - name: Rename Linux files
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-        mv src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/Angor_${{ env.VERSION }}_amd64.AppImage src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/angor-desktop-${{ env.VERSION }}-linux-amd64.AppImage
-
-    - name: Rename Mac files
-      if: matrix.runtime == 'osx-x64'
-      run: |
-        mv src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Angor_${{ env.VERSION }}_aarch64.dmg src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/angor-desktop-${{ env.VERSION }}-mac-aarch64.dmg
-
-    - name: Rename Mac files
-      if: matrix.runtime == 'osx-arm64'
-      run: |
-          mv src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Angor_${{ env.VERSION }}_aarch64.dmg src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/angor-desktop-${{ env.VERSION }}-mac-aarch64.dmg
-  
-    - name: Rename Windows files
-      if: matrix.runtime == 'win-x64'
-      run: |
-        mv src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/Angor_${{ env.VERSION }}_x64_en-US.msi src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/angor-desktop-${{ env.VERSION }}-win-x64.msi
-
-    - name: Rename Windows files
-      if: matrix.runtime == 'win-arm64'
-      run: |
-          mv src-tauri/target/release/bundle/msi/Angor_${{ env.VERSION }}_arm64_en-US.msi src-tauri/target/release/bundle/msi/angor-desktop-${{ env.VERSION }}-win-arm64.msi
-
-    - uses: actions/upload-artifact@v4
-      name: Upload Linux
-      if: matrix.os == 'ubuntu-latest'
-      with:
-          name: angor-desktop-${{ env.VERSION }}-linux-amd64.AppImage
-          path: src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/angor-desktop-${{ env.VERSION }}-linux-amd64.AppImage
-
-    - uses: actions/upload-artifact@v4
-      name: Upload Mac
-      if: matrix.os == 'macos-latest'
-      with:
-        name: angor-desktop-${{ env.VERSION }}-mac-aarch64.dmg
-        path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/angor-desktop-${{ env.VERSION }}-mac-aarch64.dmg
-
-    - uses: actions/upload-artifact@v4
-      name: Upload Windows
-      if: matrix.runtime == 'win-x64'
-      with:
-          name: angor-desktop-${{ env.VERSION }}-win-x64.msi
-          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/angor-desktop-${{ env.VERSION }}-win-x64.msi
-
-    - uses: actions/upload-artifact@v4
-      name: Upload Windows
-      if: matrix.runtime == 'win-arm64'
-      with:
-              name: angor-desktop-${{ env.VERSION }}-win-arm64.msi
-              path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/angor-desktop-${{ env.VERSION }}-win-arm64.msi
+    # All the desktop app upload steps commented out...
     
 
   create-release:
@@ -217,10 +156,11 @@ jobs:
     - name: Add .nojekyll file
       run: touch dist/wwwroot/.nojekyll
 
+    # CHANGED: Deploy to angor-test instead of original repo
     - name: Deploy to Github Pages
       uses: JamesIves/github-pages-deploy-action@v4
       with:
-          branch: main 
+          branch: gh-pages  # CHANGED: from main to gh-pages (standard for GitHub Pages)
           folder: dist/wwwroot
-          repository-name: block-core/angor-test
-          token: ${{ secrets.ANGOR_DEPLOY_TOKEN }}
+          repository-name: ${{ github.repository_owner }}/angor-test  # CHANGED: deploy to your angor-test repo
+          token: ${{ secrets.GITHUB_TOKEN }}  # Try default token first

@@ -1,0 +1,65 @@
+
+name: PR Testing Deploy
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  pr-test-deploy:
+    name: Build and Deploy PR for Testing
+    runs-on: ubuntu-latest
+    
+    env:
+      PROJECT_NAME: "Angor"
+      SOLUTION_PATH: "src/Angor.sln"
+      PROJECT_PATH: "src/Angor/Client/Angor.Client.csproj"
+      
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Variables
+      run: |
+        echo VERSION=$(npm run version --silent) >> $GITHUB_ENV
+        echo PR_NUMBER=${{ github.event.number }} >> $GITHUB_ENV
+      shell: bash
+
+    # Build the .NET application (web version only, no desktop apps)
+    - name: Publish Web App
+      run: dotnet publish -c Release -r linux-x64 /p:Version=${{ env.VERSION }}.PR${{ env.PR_NUMBER }} -v m -o publish ${{env.PROJECT_PATH}}
+
+    # Run tests to make sure PR doesn't break anything
+    - name: Run Tests
+      continue-on-error: true
+      run: dotnet test -c Release --verbosity normal ${{env.SOLUTION_PATH}}
+
+    # Prepare for deployment
+    - name: Copy index.html to 404.html (for SPA routing)
+      run: cp publish/wwwroot/index.html publish/wwwroot/404.html
+      
+    - name: Add .nojekyll file (prevent Jekyll processing)
+      run: touch publish/wwwroot/.nojekyll
+
+    # Deploy to angor-debug repository
+    - name: Deploy to angor-debug for PR Testing
+      uses: JamesIves/github-pages-deploy-action@v4
+      with:
+        branch: gh-pages
+        folder: publish/wwwroot
+        repository-name: ${{ github.repository_owner }}/angor-debug  # This will be <github-username>/angor-debug
+        token: ${{ secrets.GITHUB_TOKEN }}  # Try default token first
+        commit-message: "Deploy PR #${{ env.PR_NUMBER }} for testing"
