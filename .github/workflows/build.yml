@@ -159,7 +159,7 @@ jobs:
     - name: Deploy to Github Pages
       uses: JamesIves/github-pages-deploy-action@v4
       with:
-          branch: gh-pages
+          branch: main
           folder: dist/wwwroot
           repository-name: ${{ github.repository_owner }}/angor-test
           token: ${{ secrets.ANGOR_DEBUG_DEPLOY_TOKEN }}

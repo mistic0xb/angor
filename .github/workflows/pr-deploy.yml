@@ -60,7 +60,7 @@ jobs:
     - name: Deploy to angor-debug for PR Testing
       uses: JamesIves/github-pages-deploy-action@v4
       with:
-        branch: gh-pages
+        branch: main
         folder: publish/wwwroot
         repository-name: ${{ github.repository_owner }}/angor-debug  # This will be <github-username>/angor-debug
         token: ${{ secrets.ANGOR_DEBUG_DEPLOY_TOKEN }}
