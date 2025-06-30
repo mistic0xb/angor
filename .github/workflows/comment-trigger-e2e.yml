@@ -1,0 +1,200 @@
+name: E2E Tests via Comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  check-comment:
+    name: Check for E2E Test Command
+    runs-on: ubuntu-latest
+    if: github.event.issue.pull_request && contains(github.event.comment.body, '/run e2e')
+    
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      pr_number: ${{ steps.check.outputs.pr_number }}
+      test_suite: ${{ steps.check.outputs.test_suite }}
+      base_url: ${{ steps.check.outputs.base_url }}
+    
+    steps:
+    - name: Check comment and permissions
+      id: check
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const comment = context.payload.comment.body;
+          const author = context.payload.comment.user.login;
+          const prNumber = context.payload.issue.number;
+          
+          // Check if user has write permissions (maintainers only)
+          try {
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: author
+            });
+            
+            const hasPermission = ['admin', 'write'].includes(permission.permission);
+            
+            if (!hasPermission) {
+              console.log(`User ${author} does not have permission to trigger E2E tests`);
+              
+              // Comment back explaining permissions
+              await github.rest.issues.createComment({
+                issue_number: prNumber,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `❌ @${author}, you don't have permission to trigger E2E tests. Only maintainers can run automated tests.`
+              });
+              
+              return;
+            }
+          } catch (error) {
+            console.log(`Error checking permissions: ${error.message}`);
+            return;
+          }
+          
+          // Parse test suite from comment
+          let testSuite = 'standard';
+          if (comment.includes('/run e2e smoke')) {
+            testSuite = 'smoke';
+          } else if (comment.includes('/run e2e full')) {
+            testSuite = 'full';
+          }
+          
+          // Check if there's a deployed version (look for pr-info.json)
+          const baseUrl = 'https://debug.angor.io';
+          
+          core.setOutput('should_run', 'true');
+          core.setOutput('pr_number', prNumber);
+          core.setOutput('test_suite', testSuite);
+          core.setOutput('base_url', baseUrl);
+          
+          // React to comment to show it was received
+          await github.rest.reactions.createForIssueComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: context.payload.comment.id,
+            content: 'rocket'
+          });
+          
+          // Comment back that tests are starting
+          await github.rest.issues.createComment({
+            issue_number: prNumber,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `🚀 Starting **${testSuite}** E2E tests for PR #${prNumber}...\n\n**Test URL:** ${baseUrl}\n**Triggered by:** @${author}\n\nResults will be posted here when complete.`
+          });
+
+  run-e2e-tests:
+    name: Run E2E Tests
+    needs: check-comment
+    runs-on: ubuntu-latest
+    if: needs.check-comment.outputs.should_run == 'true'
+    
+    env:
+      PROJECT_NAME: "Angor"
+      SOLUTION_PATH: "src/Angor.sln"
+      E2E_TEST_PATH: "src/Angor.Test/e2e"
+      
+    steps:
+    - name: Get PR details
+      id: pr
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: ${{ needs.check-comment.outputs.pr_number }}
+          });
+          
+          core.setOutput('ref', pr.head.sha);
+          core.setOutput('head_ref', pr.head.ref);
+          core.setOutput('title', pr.title);
+    
+    - uses: actions/checkout@v3
+      with:
+        ref: ${{ steps.pr.outputs.ref }}
+    
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+        
+    - name: Variables
+      run: |
+        echo PR_NUMBER=${{ needs.check-comment.outputs.pr_number }} >> $GITHUB_ENV
+        echo TEST_SUITE=${{ needs.check-comment.outputs.test_suite }} >> $GITHUB_ENV
+        echo BASE_URL=${{ needs.check-comment.outputs.base_url }} >> $GITHUB_ENV
+      shell: bash
+    
+    # Build the test project
+    - name: Build Test Project
+      run: dotnet build -c Release ${{ env.E2E_TEST_PATH }}
+    
+    # Wait a moment for any deployment to settle
+    - name: Wait for deployment to be ready
+      run: |
+        echo "Waiting 30 seconds for deployment to be fully ready..."
+        sleep 30
+    
+    # Check if the deployed site is accessible
+    - name: Verify deployment accessibility
+      run: |
+        echo "Checking if ${{ env.BASE_URL }} is accessible..."
+        curl -f -s -o /dev/null ${{ env.BASE_URL }} || {
+          echo "❌ Deployment not accessible at ${{ env.BASE_URL }}"
+          echo "Make sure the PR has been deployed first using the 'PR Testing Deploy' workflow"
+          exit 1
+        }
+        echo "✅ Deployment is accessible"
+    
+    # Run E2E tests based on suite type
+    - name: Run E2E Tests
+      id: e2e_tests
+      run: |
+        case "${{ env.TEST_SUITE }}" in
+          "smoke")
+            echo "Running smoke tests..."
+            dotnet test -c Release --verbosity normal ${{ env.E2E_TEST_PATH }} \
+              --filter "Category=Smoke" \
+              --logger "trx;LogFileName=e2e-smoke-results.trx" \
+              --logger "console;verbosity=detailed"
+            ;;
+          "full")
+            echo "Running full test suite..."
+            dotnet test -c Release --verbosity normal ${{ env.E2E_TEST_PATH }} \
+              --logger "trx;LogFileName=e2e-full-results.trx" \
+              --logger "console;verbosity=detailed"
+            ;;
+          *)
+            echo "Running standard test suite..."
+            dotnet test -c Release --verbosity normal ${{ env.E2E_TEST_PATH }} \
+              --filter "Category!=Slow&Category!=Experimental" \
+              --logger "trx;LogFileName=e2e-standard-results.trx" \
+              --logger "console;verbosity=detailed"
+            ;;
+        esac
+      env:
+        TEST_BASE_URL: ${{ env.BASE_URL }}
+        TEST_ENVIRONMENT: debug
+        PR_NUMBER: ${{ env.PR_NUMBER }}
+      continue-on-error: true
+    
+    # Upload test results and artifacts
+    - name: Upload Test Results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: e2e-test-results-pr${{ env.PR_NUMBER }}-${{ env.TEST_SUITE }}
+        path: |
+          **/TestResults/*.trx
+          **/screenshots/
+          **/logs/
+          **/test-results/
+    

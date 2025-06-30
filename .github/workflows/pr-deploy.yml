@@ -1,21 +1,13 @@
 name: PR Testing Deploy
 
 on:
-  # Remove automatic triggers - only manual now
+  # Manual PR 
   workflow_dispatch:
     inputs:
       pr_number:
         description: 'PR Number to deploy'
         required: true
         type: string
-      environment:
-        description: 'Deployment Environment'
-        required: false
-        default: 'debug'
-        type: choice
-        options:
-        - debug
-        - staging
 
 permissions:
   contents: write
